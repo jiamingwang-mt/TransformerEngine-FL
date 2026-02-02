@@ -207,12 +207,12 @@ class InferenceParams:
         self.cu_seqlens_q = torch.zeros(
             self.max_batch_size + 1,
             dtype=torch.int32,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
         self.cu_seqlens_kv = torch.zeros(
             self.max_batch_size + 1,
             dtype=torch.int32,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
 
         # This internal buffer holds the running length of each
@@ -223,7 +223,7 @@ class InferenceParams:
         self.pre_step_seqlens = torch.zeros(
             self.max_batch_size,
             dtype=torch.int32,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
 
     def reset(self):
@@ -429,14 +429,14 @@ class NonPagedKVCacheManager(KVCacheManager):
         self.batch_indices = torch.zeros(
             self.max_batch_size,
             dtype=torch.int32,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
         # after re-indexing, batch indices are always [0, ..., b-1]
         self.batch_indices_post_step = torch.range(
             0,
             self.max_batch_size - 1,
             dtype=torch.int32,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
         # whether reindexing is needed, i.e. when batch seq_ids have changed
         self.need_reindex = True
@@ -449,7 +449,7 @@ class NonPagedKVCacheManager(KVCacheManager):
             self.num_heads,
             self.head_dim_k,
             dtype=self.dtype,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
         v_cache = torch.zeros(
             self.max_batch_size,
@@ -457,7 +457,7 @@ class NonPagedKVCacheManager(KVCacheManager):
             self.num_heads,
             self.head_dim_v,
             dtype=self.dtype,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
         self.cache[layer_number] = (k_cache, v_cache)
 
@@ -626,7 +626,7 @@ class PagedKVCacheManager(KVCacheManager):
         self.allocated_pages = defaultdict(list)
         # page table, [batch_size, max_pages_per_seq]
         self.page_table = torch.zeros(
-            self.max_batch_size, self.max_pages_per_seq, dtype=torch.int32, device="cuda"
+            self.max_batch_size, self.max_pages_per_seq, dtype=torch.int32, device="musa"
         )
 
     def reset(self):
@@ -646,7 +646,7 @@ class PagedKVCacheManager(KVCacheManager):
             self.num_heads,
             self.head_dim_k,
             dtype=self.dtype,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
         v_cache = torch.zeros(
             self.total_num_pages,
@@ -654,7 +654,7 @@ class PagedKVCacheManager(KVCacheManager):
             self.num_heads,
             self.head_dim_v,
             dtype=self.dtype,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
         self.cache[layer_number] = (k_cache, v_cache)
 

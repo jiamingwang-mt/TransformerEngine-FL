@@ -55,7 +55,7 @@ __all__ = ["GroupedLinear"]
 
 class _GroupedLinear(torch.autograd.Function):
     """GroupedLinear semi-top level module
-    Calls custom cuda extensions.
+    Calls custom musa extensions.
     """
 
     @staticmethod
@@ -450,14 +450,14 @@ class _GroupedLinear(torch.autograd.Function):
                                 wgrad = torch.zeros(
                                     weight.main_grad.shape,
                                     dtype=weight.dtype,
-                                    device=torch.cuda.current_device(),
+                                    device=torch.musa.current_device(),
                                     requires_grad=False,
                                 )
                             else:
                                 wgrad = torch.empty(
                                     weight.main_grad.shape,
                                     dtype=weight.dtype,
-                                    device=torch.cuda.current_device(),
+                                    device=torch.musa.current_device(),
                                     requires_grad=False,
                                 )
                         elif ctx.fuse_wgrad_accumulation:
@@ -528,7 +528,7 @@ class GroupedLinear(TransformerEngineBaseModule):
                  used to get the random number generator state tracker for initializing weights.
     rng_tracker_name : str, default = `None`
                  the param passed to get_rng_state_tracker to get the specific rng tracker.
-    device : Union[torch.device, str], default = "cuda"
+    device : Union[torch.device, str], default = "musa"
           The device on which the parameters of the model will be allocated. It is the user's
           responsibility to ensure all parameters are moved to the GPU before running the
           forward pass.
@@ -581,7 +581,7 @@ class GroupedLinear(TransformerEngineBaseModule):
         return_bias: bool = False,
         params_dtype: Optional[torch.dtype] = None,
         parallel_mode: Optional[str] = None,
-        device: Union[torch.device, str] = "cuda",
+        device: Union[torch.device, str] = "musa",
         ub_overlap_rs: bool = False,
         ub_overlap_ag: bool = False,
         ub_name: Optional[str] = None,
@@ -768,7 +768,7 @@ class GroupedLinear(TransformerEngineBaseModule):
         if skip_fp8_weight_update is not None:
             is_first_microbatch = False
 
-        with torch.cuda.device(
+        with torch.musa.device(
             getattr(self, list(self.named_parameters())[0][0]).device
         ), self.prepare_forward(inp, num_gemms=self.num_gemms) as inp:
             weight_tensors = self._get_weight_tensors()

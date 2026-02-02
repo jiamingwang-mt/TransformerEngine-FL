@@ -66,28 +66,28 @@ from transformer_engine.pytorch.attention.dot_product_attention.utils import (
 )
 from transformer_engine.pytorch import export
 from transformer_engine.pytorch.export import is_in_onnx_export_mode
-
+from flash_attn import flash_attn_func
 # Global vars for flash attn v2 and v3 imports
-flash_attn_cuda_bwd = None
-flash_attn_func = None
+flash_attn_musa_bwd = None
+# flash_attn_func = None
 flash_attn_varlen_func = None
 _flash_attn_fwd = None
 _flash_attn_bwd = None
 _flash_attn_varlen_fwd = None
 _flash_attn_varlen_bwd = None
 try:
-    fa_utils.version = PkgVersion(get_pkg_version("flash-attn"))
+    fa_utils.version = PkgVersion(get_pkg_version("flash-attn11"))
 except PackageNotFoundError:
     pass  # only print warning if use_flash_attention_2 = True in get_attention_backend
 else:
-    if torch.cuda.is_available() and get_device_compute_capability() >= (10, 0):
+    if torch.musa.is_available() and get_device_compute_capability() >= (10, 0):
         if fa_utils.version_required_blackwell <= fa_utils.version <= fa_utils.max_version:
             fa_utils.is_installed = True
     elif fa_utils.version_required <= fa_utils.version <= fa_utils.max_version:
         fa_utils.is_installed = True
 
     if fa_utils.is_installed:
-        from flash_attn_2_cuda import varlen_bwd as flash_attn_cuda_bwd
+        from flash_attn_2_musa import varlen_bwd as flash_attn_musa_bwd
         from flash_attn.flash_attn_interface import flash_attn_func, flash_attn_varlen_func
         from flash_attn.flash_attn_interface import _flash_attn_forward as _flash_attn_fwd
         from flash_attn.flash_attn_interface import _flash_attn_backward as _flash_attn_bwd
@@ -101,7 +101,7 @@ else:
         # Setup Flash attention utils
         fa_utils.set_flash_attention_version()
     elif (
-        torch.cuda.is_available()
+        torch.musa.is_available()
         and get_device_compute_capability() >= (8, 0)
         and dpa_utils._NVTE_FLASH_ATTN
     ):
@@ -369,7 +369,7 @@ class UnfusedDotProductAttention(torch.nn.Module):
             output_size[2],
             output_size[3],
             dtype=query_layer.dtype,
-            device=torch.cuda.current_device(),
+            device=torch.musa.current_device(),
         )
 
         scale = self.softmax_scale
@@ -387,10 +387,10 @@ class UnfusedDotProductAttention(torch.nn.Module):
                 fp8_recipe = fp8_meta["local_recipes"][0]
             if fp8_recipe.float8_current_scaling():
                 S_quantizer = Float8CurrentScalingQuantizer(
-                    fp8_dtype=S_quantizer.dtype, device="cuda"
+                    fp8_dtype=S_quantizer.dtype, device="musa"
                 )
                 dP_quantizer = Float8CurrentScalingQuantizer(
-                    fp8_dtype=dP_quantizer.dtype, device="cuda"
+                    fp8_dtype=dP_quantizer.dtype, device="musa"
                 )
 
             if "2" in qkv_layout or "3" in qkv_layout:
@@ -660,7 +660,7 @@ class FlashAttention(torch.nn.Module):
         alibi_slopes: Optional[torch.Tensor] = None,
         cp_group: Optional[Union[dist_group_type, List[dist_group_type]]] = None,
         cp_global_ranks: List[int] = None,
-        cp_stream: torch.cuda.Stream = None,
+        cp_stream: torch.musa.Stream = None,
         cp_comm_type: str = "p2p",
         fp8: bool = False,
         fp8_meta: Optional[Dict[str, Any]] = None,
@@ -676,7 +676,7 @@ class FlashAttention(torch.nn.Module):
             for x in [query_layer, key_layer, value_layer]
         ), "FlashAttention only supports FP16 and BF16 data types, or Float8Tensors."
         assert (
-            query_layer.is_cuda and key_layer.is_cuda and value_layer.is_cuda
+            query_layer.is_musa and key_layer.is_musa and value_layer.is_musa
         ), "FlashAttention currently only supports CUDA tensors."
         assert (
             qkv_layout in QKVLayouts
@@ -933,6 +933,7 @@ class FlashAttention(torch.nn.Module):
                                 1
                             )[:batch_size]
                         )
+                    print(func)
                     output = func(
                         query_layer,
                         key_layer,
@@ -1413,8 +1414,8 @@ class FusedAttnFunc(torch.autograd.Function):
             dk = torch.empty_like(k)
             dv = torch.empty_like(v)
             d_out, q, k, v, out = [dpa_utils.maybe_contiguous(x) for x in (d_out, q, k, v, out)]
-            # from transformer_engine.pytorch.attention.dot_product_attention import flash_attn_cuda_bwd
-            flash_attn_cuda_bwd(
+            # from transformer_engine.pytorch.attention.dot_product_attention import flash_attn_musa_bwd
+            flash_attn_musa_bwd(
                 d_out,
                 q,
                 k,
@@ -1719,7 +1720,7 @@ class FusedAttention(torch.nn.Module):
         fast_zero_fill: bool = True,
         cp_group: Optional[Union[dist_group_type, List[dist_group_type]]] = None,
         cp_global_ranks: List[int] = None,
-        cp_stream: torch.cuda.Stream = None,
+        cp_stream: torch.musa.Stream = None,
         cp_comm_type: str = "p2p",
         fp8: bool = False,
         fp8_meta: Optional[Dict[str, Any]] = None,
@@ -1738,7 +1739,7 @@ class FusedAttention(torch.nn.Module):
             for x in [query_layer, key_layer, value_layer]
         ), "FusedAttention only supports FP16 and BF16 data types, or Float8Tensors."
         assert (
-            query_layer.is_cuda and key_layer.is_cuda and value_layer.is_cuda
+            query_layer.is_musa and key_layer.is_musa and value_layer.is_musa
         ), "FusedAttention only supports CUDA tensors."
         assert (
             qkv_layout in QKVLayouts

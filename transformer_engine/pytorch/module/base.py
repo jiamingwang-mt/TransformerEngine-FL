@@ -76,7 +76,7 @@ class UserBufferQuantizationMode(Enum):
 
 def get_cublas_workspace_size_bytes() -> None:
     """Return 32 MiB if using hopper, 4 MiB for all other architectures."""
-    if torch.cuda.get_device_properties(torch.cuda.current_device()).major >= 9:
+    if torch.musa.get_device_properties(torch.musa.current_device()).major >= 9:
         # 32 MiB for NVFP4 GEMM, plus additional 1024 B for alignment and misc scales
         return 32 * 1024 * 1024 + 1024
     return 4_194_304
@@ -87,7 +87,7 @@ def get_workspace() -> torch.Tensor:
     global _cublas_workspace
     if _cublas_workspace is None:
         _cublas_workspace = torch.empty(
-            get_cublas_workspace_size_bytes(), dtype=torch.uint8, device="cuda"
+            get_cublas_workspace_size_bytes(), dtype=torch.uint8, device="musa"
         )
     return _cublas_workspace
 
@@ -98,7 +98,7 @@ def get_multi_stream_cublas_workspace() -> List[torch.Tensor]:
     if not _multi_stream_cublas_workspace:
         for _ in range(tex.get_num_cublas_streams()):
             _multi_stream_cublas_workspace.append(
-                torch.empty(get_cublas_workspace_size_bytes(), dtype=torch.uint8, device="cuda")
+                torch.empty(get_cublas_workspace_size_bytes(), dtype=torch.uint8, device="musa")
             )
     return _multi_stream_cublas_workspace
 
@@ -111,7 +111,7 @@ def get_dummy_wgrad(shape: list, dtype: torch.dtype, zero=False) -> torch.Tensor
         _dummy_wgrads[(shape[0], shape[1], dtype)] = torch.empty(
             shape,
             dtype=dtype,
-            device="cuda",
+            device="musa",
             requires_grad=False,
         )
     if zero:
@@ -182,8 +182,8 @@ def initialize_ub(
     """
     if not tex.device_supports_multicast():
         assert bool(int(os.getenv("UB_SKIPMC", "0"))), (
-            "CUDA device, driver and/or toolkit version does not support comm+GEMM overlap with "
-            + "CUDA Multicast. Launch app with UB_SKIPMC=1 to try CUDA IPC instead."
+            "MUSA device, driver and/or toolkit version does not support comm+GEMM overlap with "
+            + "MUSA Multicast. Launch app with UB_SKIPMC=1 to try MUSA IPC instead."
         )
 
     if not quantization_modes:
@@ -282,7 +282,7 @@ def initialize_ub(
     elif _cublas_workspace.numel() != get_cublas_workspace_size_bytes() * _NUM_MAX_UB_STREAMS:
         # This ensures we don't do `.repeat()` on an already expanded workspace
         _cublas_workspace = torch.empty(
-            get_cublas_workspace_size_bytes(), dtype=torch.uint8, device="cuda"
+            get_cublas_workspace_size_bytes(), dtype=torch.uint8, device="musa"
         ).repeat(_NUM_MAX_UB_STREAMS)
 
     # Default buffer precision: AllGather buffers use fp8 when using fp8 recipe
@@ -640,7 +640,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
     def __init__(self) -> None:
         super().__init__()
-        assert torch.cuda.is_available(), "TransformerEngine needs CUDA."
+        assert torch.musa.is_available(), "TransformerEngine needs MUSA."
         self.name = None
         self.next_iter_when_debug_should_be_run = 0
         self.fp8_initialized = False
@@ -895,7 +895,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         state["extra_fp8_variables"] = extra
 
         # Serialize state into byte tensor
-        torch.cuda.synchronize()
+        torch.musa.synchronize()
         state_serialized = bytearray(pickle.dumps(state))
         state_serialized = torch.frombuffer(state_serialized, dtype=torch.uint8)
         return state_serialized
@@ -917,7 +917,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         elif isinstance(state, io.BytesIO):
             # Deprecated format with io.BytesIO
             state.seek(0)
-            state = torch.load(state, map_location="cuda")
+            state = torch.load(state, map_location="musa")
         else:
             raise RuntimeError("Unsupported checkpoint format.")
 
@@ -956,7 +956,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             copy_tensor(state["amax_history_fwd"], self.fp8_meta["scaling_fwd"].amax_history)
             copy_tensor(state["scale_bwd"], self.fp8_meta["scaling_bwd"].scale)
             copy_tensor(state["amax_history_bwd"], self.fp8_meta["scaling_bwd"].amax_history)
-        torch.cuda.synchronize()
+        torch.musa.synchronize()
 
     def set_activation_dtype(self, inp: torch.Tensor) -> None:
         """Get activation data type for AMP."""
@@ -1080,7 +1080,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         if self.fp8 and in_fp8_activation_recompute_phase():
             FP8GlobalStateManager.get_old_fp8_meta_tensors_for_recompute(self.fp8_meta)
         else:
-            assert inp.is_cuda, "TransformerEngine needs CUDA."
+            assert inp.is_musa, "TransformerEngine needs MUSA."
 
             if self.tp_size > 1:
                 assert self.tp_group_initialized, "TP group not initialized."
@@ -1115,16 +1115,16 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         before the GEMM for there to be a guaranteed overlap. From the
         host side in TE, the comm calls are always launched first, but
         to ensure that the GEMM isn't scheduled first, the environment
-        variable `CUDA_DEVICE_MAX_CONNECTIONS` needs to be set to 1 to
+        variable `MUSA_DEVICE_MAX_CONNECTIONS` needs to be set to 1 to
         force a single channel.
         """
         if self.tp_size == 1:
             return
-        num_cuda_work_queues = int(os.getenv("CUDA_DEVICE_MAX_CONNECTIONS", "0"))
-        if num_cuda_work_queues != 1:
+        num_musa_work_queues = int(os.getenv("MUSA_DEVICE_MAX_CONNECTIONS", "0"))
+        if num_musa_work_queues != 1:
             warnings.warn(
                 "To guarantee overlapping TP and SP collectives with the backward"
-                "GEMMs, set environment variable CUDA_DEVICE_MAX_CONNECTIONS = 1"
+                "GEMMs, set environment variable MUSA_DEVICE_MAX_CONNECTIONS = 1"
             )
 
     @staticmethod
@@ -1248,7 +1248,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
     def reset_parameters(self, defer_init: Optional[bool] = False) -> None:
         """
         Reset all module parameters to initial values. Unless deferred initialization
-        is specified, all parameters on a 'meta' device are also materialized on a real cuda
+        is specified, all parameters on a 'meta' device are also materialized on a real musa
         device before the values are reset to initial.
         """
         if defer_init:
@@ -1257,7 +1257,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         for name, param in self.named_parameters(recurse=False):
             # Ensure parameter is on a real device
             if param.device == torch.device("meta"):
-                param = torch.empty_like(param, device="cuda")
+                param = torch.empty_like(param, device="musa")
 
             # Initialize the parameter values on device
             init_fn = self.param_init_meta[name].init_fn

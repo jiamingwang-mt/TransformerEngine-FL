@@ -33,6 +33,13 @@ def _empty_tensor() -> torch.Tensor:
     return torch.Tensor().cuda()
 
 
+
+def non_tn_fp8_gemm_supported() -> bool:
+    """Checks whether the device supports
+    non-TN layouts for FP8 GEMMs.
+    """
+    return torch.cuda.get_device_capability() >= (10, 0)
+
 def clear_tensor_data(*tensors: Tuple[Optional[torch.Tensor], ...]) -> None:
     """
     Trick to deallocate tensor memory when delete operation does not

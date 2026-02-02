@@ -325,7 +325,7 @@ class DotProductAttention(TransformerEngineBaseModule):
         attention_type: str = "self",
         cp_group: Optional[Union[dist_group_type, List[dist_group_type]]] = None,
         cp_global_ranks: List[int] = None,
-        cp_stream: torch.cuda.Stream = None,
+        cp_stream: torch.musa.Stream = None,
         cp_comm_type: str = "p2p",
         softmax_scale: Optional[float] = None,
         softmax_type: str = "vanilla",
@@ -416,16 +416,17 @@ class DotProductAttention(TransformerEngineBaseModule):
         self.return_max_logit = return_max_logit
 
         self.softmax_type = softmax_type
+        self.softmax_offset = None
         if self.softmax_type == "vanilla":
             self.softmax_offset = None
         if self.softmax_type == "off-by-one":
             self.softmax_offset = torch.zeros(
-                self.num_attention_heads // self.tp_size, device="cuda"
+                self.num_attention_heads // self.tp_size, device="musa"
             )
         if self.softmax_type == "learnable":
             self.register_parameter(
                 "softmax_offset",
-                Parameter(torch.empty(self.num_attention_heads // self.tp_size, device="cuda")),
+                Parameter(torch.empty(self.num_attention_heads // self.tp_size, device="musa")),
                 get_rng_state_tracker=get_rng_state_tracker,
             )
 
@@ -523,7 +524,7 @@ class DotProductAttention(TransformerEngineBaseModule):
         self,
         cp_group: Union[dist_group_type, List[dist_group_type], None],
         cp_global_ranks: List[int],
-        cp_stream: torch.cuda.Stream,
+        cp_stream: torch.musa.Stream,
         cp_comm_type: str = "p2p",
     ) -> None:
         """
@@ -539,8 +540,8 @@ class DotProductAttention(TransformerEngineBaseModule):
                   and cp_group[1] are for a2a and p2p communications respectively.
         cp_global_ranks : List[int]
                          list of global ranks in the context group.
-        cp_stream : torch.cuda.Stream
-                   cuda stream for context parallel execution.
+        cp_stream : torch.musa.Stream
+                   musa stream for context parallel execution.
         cp_comm_type : str, default = `p2p`
                       inter-gpu communication type for context parallelism.
                       Can be "p2p" or "all_gather" or "a2a" or "a2a+p2p".
@@ -986,12 +987,13 @@ class DotProductAttention(TransformerEngineBaseModule):
         fp8_output: Optional[bool], default = `False`
             Whether to enforce output to be in FP8 or not.
         """
-
-        with torch.cuda.device(query_layer.device), self.prepare_forward(
+        self.softmax_type = "vanilla"
+        with torch.musa.device(query_layer.device), self.prepare_forward(
             query_layer,
             num_gemms=3,
             allow_non_contiguous=True,
-            allow_different_data_and_param_types=self.softmax_type != "vanilla",
+            # allow_different_data_and_param_types=self.softmax_type != "vanilla",
+            # allow_different_data_and_param_types=False,
         ) as query_layer:
             # checks for RNG
             if self.rng_states_tracker is not None and is_graph_capturing():
@@ -1000,7 +1002,7 @@ class DotProductAttention(TransformerEngineBaseModule):
                 ), "Unsupported RNG states tracker."
                 assert (
                     graph_safe_rng_available()
-                ), "Upgrade PyTorch version to get RNG manipulation support for cuda graph capture."
+                ), "Upgrade PyTorch version to get RNG manipulation support for musa graph capture."
 
             # checks for FP8
             if self.fp8:
@@ -1026,7 +1028,7 @@ class DotProductAttention(TransformerEngineBaseModule):
 
             # checks for q/k/v shapes
             assert (
-                query_layer.is_cuda and key_layer.is_cuda and value_layer.is_cuda
+                query_layer.is_musa and key_layer.is_musa and value_layer.is_musa
             ), "DotProductAttention only supports CUDA tensors."
             assert (
                 query_layer.dtype == key_layer.dtype and query_layer.dtype == value_layer.dtype
@@ -1325,7 +1327,7 @@ class DotProductAttention(TransformerEngineBaseModule):
                 fp8_meta=self.fp8_meta,
                 inference_params=inference_params,
                 softmax_type=self.softmax_type,
-                return_max_logit=self.return_max_logit,
+                # return_max_logit=self.return_max_logit,
             )
             global _attention_backends
             if is_in_onnx_export_mode():
@@ -1385,6 +1387,7 @@ class DotProductAttention(TransformerEngineBaseModule):
                     " disabling all backends."
                 )
 
+            self.softmax_offset = None 
             # run attention
             softmax_offset = (
                 self.softmax_offset.reshape(1, -1, 1, 1).to(torch.float32)

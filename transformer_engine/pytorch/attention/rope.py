@@ -54,7 +54,7 @@ class RotaryPositionEmbedding(torch.nn.Module):
         inv_freq = 1.0 / (
             self.rotary_base
             ** (
-                torch.arange(0, dim, 2, dtype=torch.float32, device=torch.cuda.current_device())
+                torch.arange(0, dim, 2, dtype=torch.float32, device=torch.musa.current_device())
                 / dim
             )
         )
@@ -76,7 +76,7 @@ class RotaryPositionEmbedding(torch.nn.Module):
         offset: int, default = 0
             Fixed offset for frequencies.
         """
-        with torch.autocast(enabled=False, device_type="cuda"):
+        with torch.autocast(enabled=False, device_type="musa"):
             seq = (
                 torch.arange(max_seq_len, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
                 + offset

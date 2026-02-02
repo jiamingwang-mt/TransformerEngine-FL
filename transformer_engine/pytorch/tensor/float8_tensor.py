@@ -10,7 +10,7 @@ import warnings
 import torch
 import transformer_engine_torch as tex
 from transformer_engine_torch import DType as TE_DType
-
+from ._internal.float8_tensor_base import Float8TensorBase, _FromFloat8Func
 from transformer_engine.common.recipe import DelayedScaling, Float8CurrentScaling, Recipe
 from ..utils import canonicalize_process_group, devices_match
 from .storage.float8_tensor_storage import Float8TensorStorage, _FromFloat8Func

@@ -153,7 +153,7 @@ def _act_func(activation: str, recipe: Optional[Recipe] = None):
 
 class _LayerNormMLP(torch.autograd.Function):
     """LayerNormMLP semi-top level module
-    Calls custom cuda extensions.
+    Calls custom musa extensions.
     """
 
     @staticmethod
@@ -904,7 +904,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     # We use the send stream to copy into the userbuffers.
                     # This is the same stream that we will use to access the data in the AG,
                     # so we dont need to add any syncs yet.
-                    with torch.cuda.stream(dgrad_send_stream):
+                    with torch.musa.stream(dgrad_send_stream):
                         grad_output, _ = fill_userbuffers_buffer_for_all_gather(
                             ub_obj_fc2_wgrad,
                             grad_outputs[0],
@@ -1098,7 +1098,7 @@ class _LayerNormMLP(torch.autograd.Function):
             reduce_scatter_out = None
             if ctx.ub_overlap_rs_dgrad:
                 reduce_scatter_out = torch.empty(
-                    fc1_dgrad_shape, dtype=ctx.activation_dtype, device="cuda"
+                    fc1_dgrad_shape, dtype=ctx.activation_dtype, device="musa"
                 )
             if ctx.ub_bulk_wgrad:
                 gemm_out = ub_obj_fc1_wgrad.get_buffer(local_chunk=False)
@@ -1181,7 +1181,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 reduce_scatter_out = None
                 if ctx.ub_bulk_wgrad and ub_obj_fc1_wgrad.is_fp8_ubuf():
                     reduce_scatter_out = torch.empty(
-                        fc1_dgrad_shape, dtype=ctx.activation_dtype, device="cuda"
+                        fc1_dgrad_shape, dtype=ctx.activation_dtype, device="musa"
                     )
 
                 # Arguments to include in wgrad GEMM closure
@@ -1309,14 +1309,14 @@ class _LayerNormMLP(torch.autograd.Function):
                     fc1_wgrad = torch.zeros(
                         origin_fc1_weight.main_grad.shape,
                         dtype=origin_fc1_weight.dtype,
-                        device=torch.cuda.current_device(),
+                        device=torch.musa.current_device(),
                         requires_grad=False,
                     )
                 else:
                     fc1_wgrad = torch.empty(
                         origin_fc1_weight.main_grad.shape,
                         dtype=origin_fc1_weight.dtype,
-                        device=torch.cuda.current_device(),
+                        device=torch.musa.current_device(),
                         requires_grad=False,
                     )
             elif ctx.fuse_wgrad_accumulation:
@@ -1334,14 +1334,14 @@ class _LayerNormMLP(torch.autograd.Function):
                     fc2_wgrad = torch.zeros(
                         origin_fc2_weight.main_grad.shape,
                         dtype=origin_fc2_weight.dtype,
-                        device=torch.cuda.current_device(),
+                        device=torch.musa.current_device(),
                         requires_grad=False,
                     )
                 else:
                     fc2_wgrad = torch.empty(
                         origin_fc2_weight.main_grad.shape,
                         dtype=origin_fc2_weight.dtype,
-                        device=torch.cuda.current_device(),
+                        device=torch.musa.current_device(),
                         requires_grad=False,
                     )
             elif ctx.fuse_wgrad_accumulation:
@@ -1462,7 +1462,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
                          .. math::
                             y = \frac{x - \mathrm{E}[x]}{ \sqrt{\mathrm{Var}[x] + \varepsilon}} *
                             (1 + \gamma) + \beta
-    device : Union[torch.device, str], default = "cuda"
+    device : Union[torch.device, str], default = "musa"
           The device on which the parameters of the model will be allocated. It is the user's
           responsibility to ensure all parameters are moved to the GPU before running the
           forward pass.
@@ -1546,7 +1546,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
         micro_batch_size: Optional[int] = None,
         set_parallel_mode: bool = False,
         zero_centered_gamma: bool = False,
-        device: Union[torch.device, str] = "cuda",
+        device: Union[torch.device, str] = "musa",
         ub_overlap_ag: bool = False,
         name: str = None,
         ub_overlap_rs: bool = False,
@@ -1806,7 +1806,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
             if get_ub("fc2_fprop", FP8GlobalStateManager.is_fp8_enabled()).is_fp8_ubuf():
                 fp8_output = True
 
-        with torch.cuda.device(
+        with torch.musa.device(
             getattr(self, list(self.named_parameters())[0][0]).device
         ), self.prepare_forward(inp, num_gemms=2) as inp:
 

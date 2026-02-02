@@ -81,7 +81,7 @@ __all__ = ["LayerNormLinear"]
 
 class _LayerNormLinear(torch.autograd.Function):
     """LayerNormLinear semi-top level module
-    Calls custom cuda extensions.
+    Calls custom musa extensions.
     """
 
     @staticmethod
@@ -788,7 +788,7 @@ class _LayerNormLinear(torch.autograd.Function):
                     # We use the send stream to copy into the userbuffers.
                     # This is the same stream that we will use to access the data in the AG,
                     # so we dont need to add any syncs yet.
-                    with torch.cuda.stream(dgrad_send_stream):
+                    with torch.musa.stream(dgrad_send_stream):
                         grad_output, _ = fill_userbuffers_buffer_for_all_gather(
                             ub_obj_overlap_wgrad,
                             grad_outputs[0],
@@ -1101,7 +1101,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
                          .. math::
                             y = \frac{x - \mathrm{E}[x]}{ \sqrt{\mathrm{Var}[x] + \varepsilon}} *
                             (1 + \gamma) + \beta
-    device : Union[torch.device, str], default = "cuda"
+    device : Union[torch.device, str], default = "musa"
           The device on which the parameters of the model will be allocated. It is the user's
           responsibility to ensure all parameters are moved to the GPU before running the
           forward pass.
@@ -1175,7 +1175,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
         return_layernorm_output_gathered: bool = False,
         parameters_split: Optional[Union[Tuple[str, ...], Dict[str, int]]] = None,
         zero_centered_gamma: bool = False,
-        device: Union[torch.device, str] = "cuda",
+        device: Union[torch.device, str] = "musa",
         ub_overlap_ag: bool = False,
         ub_overlap_rs: bool = False,
         ub_overlap_rs_dgrad: bool = False,
@@ -1535,7 +1535,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
             ).is_fp8_ubuf():
                 fp8_grad = True
 
-        with torch.cuda.device(
+        with torch.musa.device(
             getattr(self, list(self.named_parameters())[0][0]).device
         ), self.prepare_forward(
             inp, allow_non_contiguous=False  # removed .contiguous from inside the layer

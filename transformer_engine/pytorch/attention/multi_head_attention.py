@@ -128,7 +128,7 @@ class MultiheadAttention(torch.nn.Module):
                             whether to use interleaved rotary position embeddings.
     bias : bool, default = `True`
           if set to `False`, the transformer layer will not learn any additive biases.
-    device : Union[torch.device, str], default = "cuda"
+    device : Union[torch.device, str], default = "musa"
           The device on which the parameters of the model will be allocated. It is the user's
           responsibility to ensure all parameters are moved to the GPU before running the
           forward pass.
@@ -255,7 +255,7 @@ class MultiheadAttention(torch.nn.Module):
         ub_bulk_wgrad: bool = False,
         bias: bool = True,
         normalization: str = "LayerNorm",
-        device: Union[torch.device, str] = "cuda",
+        device: Union[torch.device, str] = "musa",
         qkv_format: str = "sbhd",
         name: str = None,
         qk_norm_type: Optional[str] = None,
@@ -542,7 +542,7 @@ class MultiheadAttention(torch.nn.Module):
         self,
         cp_group: Union[dist_group_type, List[dist_group_type], None],
         cp_global_ranks: List[int],
-        cp_stream: torch.cuda.Stream,
+        cp_stream: torch.musa.Stream,
         cp_comm_type: str = "p2p",
     ) -> None:
         """
@@ -558,8 +558,8 @@ class MultiheadAttention(torch.nn.Module):
                   and cp_group[1] are for a2a and p2p communications respectively.
         cp_global_ranks : List[int]
                          list of global ranks in the context group.
-        cp_stream : torch.cuda.Stream
-                   cuda stream for context parallel execution.
+        cp_stream : torch.musa.Stream
+                   musa stream for context parallel execution.
         cp_comm_type : str, default = `p2p`
                       inter-gpu communication type for context parallelism.
                       Can be "p2p" or "all_gather" or "a2a", "a2a+p2p".

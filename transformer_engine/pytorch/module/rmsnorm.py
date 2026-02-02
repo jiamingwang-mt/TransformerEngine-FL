@@ -37,7 +37,7 @@ class RMSNorm(_RMSNormOp):
         Inner dimensions of input tensor
     eps : float, default = 1e-5
         A value added to the denominator for numerical stability
-    device: torch.device, default = default CUDA device
+    device: torch.device, default = default MUSA device
         Tensor device
     dtype: torch.dtype, default = default dtype
         Tensor datatype
@@ -49,7 +49,7 @@ class RMSNorm(_RMSNormOp):
                 y = \frac{x}{\sqrt{\mathrm{Var}[x] + \varepsilon}} * (1 + \gamma)
 
     sm_margin: int, default = 0
-        Number of SMs to exclude when launching CUDA kernels. This
+        Number of SMs to exclude when launching MUSA kernels. This
         helps overlap with other kernels, e.g. communication kernels.
         For more fine-grained control, provide a dict with the SM
         margin at each compute stage ("forward", "backward",

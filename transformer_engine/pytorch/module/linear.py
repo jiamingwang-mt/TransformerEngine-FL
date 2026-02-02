@@ -77,7 +77,7 @@ __all__ = ["Linear"]
 
 class _Linear(torch.autograd.Function):
     """Linear semi-top level module
-    Calls custom cuda extensions.
+    Calls custom musa extensions.
     """
 
     @staticmethod
@@ -794,7 +794,7 @@ class _Linear(torch.autograd.Function):
                     # We use the send stream to copy into the userbuffers.
                     # This is the same stream that we will use to access the data in the AG,
                     # so we dont need to add any syncs yet.
-                    with torch.cuda.stream(dgrad_send_stream):
+                    with torch.musa.stream(dgrad_send_stream):
                         grad_output, _ = fill_userbuffers_buffer_for_all_gather(
                             ub_obj_overlap_wgrad,
                             grad_output_arg,
@@ -1035,7 +1035,7 @@ class Linear(TransformerEngineBaseModule):
                       values as split sizes along dim 0. The resulting parameters will have
                       names that end in `_weight` or `_bias`, so trailing underscores are
                       stripped from any provided names.
-    device : Union[torch.device, str], default = "cuda"
+    device : Union[torch.device, str], default = "musa"
           The device on which the parameters of the model will be allocated. It is the user's
           responsibility to ensure all parameters are moved to the GPU before running the
           forward pass.
@@ -1110,7 +1110,7 @@ class Linear(TransformerEngineBaseModule):
         params_dtype: Optional[torch.dtype] = None,
         parallel_mode: Optional[str] = None,
         parameters_split: Optional[Union[Tuple[str, ...], Dict[str, int]]] = None,
-        device: Union[torch.device, str] = "cuda",
+        device: Union[torch.device, str] = "musa",
         ub_overlap_ag: bool = False,
         ub_overlap_rs: bool = False,
         ub_overlap_rs_dgrad: bool = False,
@@ -1420,7 +1420,7 @@ class Linear(TransformerEngineBaseModule):
             ).is_fp8_ubuf():
                 fp8_grad = True
 
-        with torch.cuda.device(
+        with torch.musa.device(
             getattr(self, list(self.named_parameters())[0][0]).device
         ), self.prepare_forward(
             inp,

@@ -264,7 +264,7 @@ def flash_attn_a2a_communicate(
     seq_dim: int,
     cp_size: int,
     cp_group: dist_group_type,
-    cp_stream: torch.cuda.Stream,
+    cp_stream: torch.musa.Stream,
     before_attn: bool,
 ) -> Union[torch.Tensor, List[torch.Tensor]]:
     """A2A communication for context parallelism."""
@@ -278,7 +278,7 @@ def flash_attn_a2a_communicate(
                     a2a_outputs[i - 1], a2a_inputs[i - 1], group=cp_group, async_op=True
                 )
             if i > 1:
-                with torch.cuda.stream(cp_stream):
+                with torch.musa.stream(cp_stream):
                     a2a_reqs[i - 2].wait()
                     x = a2a_outputs[i - 2]
                     # reorder the sequence chunks
@@ -313,7 +313,7 @@ def flash_attn_a2a_communicate(
                     x, chunk_ids_for_a2a, seq_dim, cp_size
                 )
             if i > 1:
-                with torch.cuda.stream(cp_stream):
+                with torch.musa.stream(cp_stream):
                     a2a_reqs[i - 2].wait()
                     x = a2a_outputs[i - 2]
                     # [cp, 2, b, s//2, h//cp, d] -> [b, 2, s//2, cp, h//cp, d]
@@ -322,7 +322,7 @@ def flash_attn_a2a_communicate(
                     # [b, 2, s//2, cp, h//cp, d] -> [b*s, h, d]
                     # or [2, s//2, b, cp, h//cp, d] -> [s*b, h, d]
                     a2a_outputs[i - 2] = x.view(-1, x.shape[-3] * x.shape[-2], x.shape[-1])
-    torch.cuda.current_stream().wait_stream(cp_stream)
+    torch.musa.current_stream().wait_stream(cp_stream)
     return a2a_outputs[0] if len(a2a_inputs) == 1 else a2a_outputs
 
 
@@ -331,7 +331,7 @@ def flash_attn_a2a_communicate_softmax_offset(
     h_dim: int,
     cp_size: int,
     cp_group: dist_group_type,
-    cp_stream: torch.cuda.Stream,
+    cp_stream: torch.musa.Stream,
     before_attn: bool,
 ) -> Union[torch.Tensor, List[torch.Tensor]]:
     """Split/AllGather communication for softmax offset."""
@@ -361,14 +361,14 @@ def flash_attn_a2a_communicate_softmax_offset(
         # [1, h//cp, 1, 1] -> [1, h, 1, 1]
         inp = tensor.view(-1)
         output = torch.empty(cp_size * inp.shape[0], dtype=tensor.dtype, device=device)
-        with torch.cuda.stream(cp_stream):
+        with torch.musa.stream(cp_stream):
             torch.distributed.all_gather_into_tensor(
                 output,
                 inp,
                 group=cp_group,
                 async_op=False,
             )
-        torch.cuda.current_stream().wait_stream(cp_stream)
+        torch.musa.current_stream().wait_stream(cp_stream)
         output = output.view(
             *tensor.shape[:h_dim], cp_size * tensor.shape[h_dim], *tensor.shape[h_dim + 1 :]
         )
@@ -1352,9 +1352,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         attn_biases = [None for _ in range(cp_size)]
 
         # create two streams to resolve wave quantization issue of Flash Attn in each step
-        flash_attn_streams = [torch.cuda.current_stream(), cp_stream]
+        flash_attn_streams = [torch.musa.current_stream(), cp_stream]
         # synchronize fwd results correction across steps
-        fwd_results_correction_done = torch.cuda.Event()
+        fwd_results_correction_done = torch.musa.Event()
 
         p2p_comm_buffers = [None for _ in range(cp_size)]
         k_shape = k.shape
@@ -1369,7 +1369,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         out = None
         for i in range(cp_size + 1):
             if i < cp_size:
-                with torch.cuda.stream(flash_attn_streams[i % 2]):
+                with torch.musa.stream(flash_attn_streams[i % 2]):
                     # wait until KV is received
                     for req in send_recv_reqs[(i + 1) % 2]:
                         req.wait()
@@ -1572,7 +1572,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                 if i > 1:
                     flash_attn_streams[(i - 1) % 2].wait_event(fwd_results_correction_done)
 
-                with torch.cuda.stream(flash_attn_streams[(i - 1) % 2]):
+                with torch.musa.stream(flash_attn_streams[(i - 1) % 2]):
                     if use_fused_attention:
                         # [b, h, sq, 1] -> [b, h, sq] or
                         # [t, h, 1] -> [t, np]
@@ -1628,7 +1628,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                 if i < cp_size:
                     flash_attn_streams[(i - 1) % 2].record_event(fwd_results_correction_done)
 
-        torch.cuda.current_stream().wait_stream(flash_attn_streams[1])
+        torch.musa.current_stream().wait_stream(flash_attn_streams[1])
         if return_max_logit:
             torch.distributed.all_reduce(
                 max_logit, op=torch.distributed.ReduceOp.MAX, group=cp_group
@@ -2705,10 +2705,10 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
         # [cp*2, s//2, b, h, d] -> [cp*s, b, h, d]
         k_ag = k_ag.view(-1, *k.shape[1:])
         v_ag = v_ag.view(-1, *v.shape[1:])
-        cp_stream.wait_stream(torch.cuda.current_stream())
+        cp_stream.wait_stream(torch.musa.current_stream())
 
         # create two streams to resolve wave quantization issue of Flash Attn in each step
-        flash_attn_streams = [torch.cuda.current_stream(), cp_stream]
+        flash_attn_streams = [torch.musa.current_stream(), cp_stream]
 
         local_seq_chunk_ids = [rank, 2 * cp_size - rank - 1]
         kv_seq_range_per_step = [None, None]
@@ -2723,7 +2723,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
 
         for i in range(len(local_seq_chunk_ids) + 1):
             if i < len(local_seq_chunk_ids):
-                with torch.cuda.stream(flash_attn_streams[i]):
+                with torch.musa.stream(flash_attn_streams[i]):
                     # [b, 2, sq//2, h, d] -> [b, sq//2, h, d]
                     # or [2, sq//2, b, h, d] -> [sq//2, b, h, d]
                     q_ = q.select(seq_dim, i).contiguous()
@@ -2815,7 +2815,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
             if return_max_logit and i == 0:
                 max_logit = torch.clone(max_logit_per_step[0])
             if i > 0:
-                with torch.cuda.stream(flash_attn_streams[i - 1]):
+                with torch.musa.stream(flash_attn_streams[i - 1]):
                     if qkv_format == "bshd":
                         out[:, i - 1].copy_(out_per_step[i - 1])
                     elif qkv_format == "sbhd":
@@ -2823,7 +2823,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
                 if return_max_logit:
                     max_logit = torch.maximum(max_logit, max_logit_per_step[i - 1])
 
-        torch.cuda.current_stream().wait_stream(cp_stream)
+        torch.musa.current_stream().wait_stream(cp_stream)
         if return_max_logit:
             torch.distributed.all_reduce(
                 max_logit, op=torch.distributed.ReduceOp.MAX, group=cp_group
@@ -2896,9 +2896,9 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
         dv_per_step = [None, None]
 
         # create two streams to resolve wave quantization issue of Flash Attn in each step
-        flash_attn_streams = [torch.cuda.current_stream(), ctx.cp_stream]
+        flash_attn_streams = [torch.musa.current_stream(), ctx.cp_stream]
         # synchronize dkv update across steps
-        dkv_update_done = torch.cuda.Event()
+        dkv_update_done = torch.musa.Event()
 
         # [s, b, h, d] -> [cp, s, b, h, d]
         k_ag, _ = gather_along_first_dim(k, ctx.cp_group)
@@ -2913,7 +2913,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
         # [cp*2, s//2, b, h, d] -> [cp*s, b, h, d]
         k_ag = k_ag.view(-1, *k.shape[1:])
         v_ag = v_ag.view(-1, *v.shape[1:])
-        ctx.cp_stream.wait_stream(torch.cuda.current_stream())
+        ctx.cp_stream.wait_stream(torch.musa.current_stream())
 
         local_seq_chunk_ids = [rank, 2 * cp_size - rank - 1]
 
@@ -2950,7 +2950,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
 
         for i in range(len(local_seq_chunk_ids) + 1):
             if i < len(local_seq_chunk_ids):
-                with torch.cuda.stream(flash_attn_streams[i]):
+                with torch.musa.stream(flash_attn_streams[i]):
                     # [b, 2, sq//2, h, d] -> [b, sq//2, h, d]
                     # or [2, sq//2, b, h, d] -> [sq//2, b, h, d]
                     q_ = q.select(seq_dim, i).contiguous()
@@ -3028,7 +3028,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
                         )
 
             if i > 0:
-                with torch.cuda.stream(flash_attn_streams[i - 1]):
+                with torch.musa.stream(flash_attn_streams[i - 1]):
                     if ctx.qkv_format == "bshd":
                         dq[:, i - 1].copy_(dq_per_step[i - 1])
                     elif ctx.qkv_format == "sbhd":
@@ -3050,7 +3050,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
                     if i < len(local_seq_chunk_ids):
                         flash_attn_streams[i - 1].record_event(dkv_update_done)
 
-        torch.cuda.current_stream().wait_stream(ctx.cp_stream)
+        torch.musa.current_stream().wait_stream(ctx.cp_stream)
 
         # [cp*s, b, h, d] -> [cp*2, s//2, b, h, d]
         dk = dk.view(2 * cp_size, -1, *dk.shape[-3:])
