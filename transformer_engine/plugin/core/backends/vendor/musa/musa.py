@@ -9,21 +9,6 @@ import torch
 from ....ops import TEFLBackendBase, FP8TensorMeta
 
 
-# from transformer_engine.pytorch.attention.dot_product_attention.utils import (
-#     check_set_window_size,
-#     get_cu_seqlens,
-#     _get_full_cu_seqlens,
-#     get_alibi,
-#     get_qkv_layout,
-#     InferenceParams,
-#     get_cu_seqlens_and_indices,
-#     UnpackTensor,
-#     get_indices,
-#     PackTensors,
-#     # AttentionParams,
-#     # get_attention_backend,
-# )
-
 def _load_musa_libs():
     import ctypes
     import os
@@ -40,57 +25,8 @@ def _load_musa_libs():
 
     ext = get_ext()
 
-    # def try_load_lib(name, search_patterns):
-    #     for env_var in [f"{name.upper()}_HOME", f"{name.upper()}_PATH"]:
-    #         path = os.environ.get(env_var)
-    #         if path:
-    #             libs = glob_module.glob(f"{path}/**/lib{name}{ext}*", recursive=True)
-    #             if libs:
-    #                 libs.sort(reverse=True, key=os.path.basename)
-    #                 try:
-    #                     return ctypes.CDLL(libs[0], mode=ctypes.RTLD_GLOBAL)
-    #                 except:
-    #                     pass
-
-    #     musa_home = os.environ.get("MUSA_HOME") or os.environ.get("MUSA_PATH") or "/usr/local/musa"
-    #     for pattern in search_patterns:
-    #         libs = glob_module.glob(f"{musa_home}/**/{pattern}", recursive=True)
-    #         if libs:
-    #             libs.sort(reverse=True, key=os.path.basename)
-    #             try:
-    #                 return ctypes.CDLL(libs[0], mode=ctypes.RTLD_GLOBAL)
-    #             except:
-    #                 pass
-
-    #     try:
-    #         result = subprocess.check_output(f"ldconfig -p | grep 'lib{name}{ext}'", shell=True)
-    #         for line in result.decode().split('\n'):
-    #             if f"lib{name}" in line and "=>" in line:
-    #                 so_path = line.split(">")[1].strip()
-    #                 if so_path:
-    #                     return ctypes.CDLL(so_path, mode=ctypes.RTLD_GLOBAL)
-    #     except:
-    #         pass
-
-    #     try:
-    #         return ctypes.CDLL(f"lib{name}{ext}", mode=ctypes.RTLD_GLOBAL)
-    #     except:
-    #         return None
-
-    # try:
-    #     try_load_lib("mudnn", [f"libmudnn{ext}*"])
-    #     try_load_lib("mtrtc", [f"libmtrtc{ext}*"])
-    #     try_load_lib("murand", [f"libmurand{ext}*"])
     try:
         import transformer_engine_musa
-        # te_path = Path(importlib.util.find_spec("transformer_engine_musa").origin).parent.parent
-        # for search_dir in [te_path, te_path / "transformer_engine_musa"]:
-        #     if search_dir.exists():
-        #         matches = list(search_dir.glob(f"libtransformer_engine{ext}*"))
-        #         if matches:
-        #             ctypes.CDLL(str(matches[0]), mode=ctypes.RTLD_GLOBAL)
-        #             return True
-        # return False
     except Exception as e:
         print(f"[MUSA] Failed to load MUSA libs: {e}")
         return False
@@ -104,32 +40,11 @@ def _ensure_musa_libs():
     return _musa_libs_loaded
 
 def _check_musa_available() -> bool:
-    # import transformer_engine_musa
-    # import transformer_engine_musa_torch
+    import torch_musa
     if not torch.musa.is_available():
         return False
     else:
         return True
-    # import os
-    # try:
-    #     from ...._build_config import SKIP_CUDA_BUILD
-    #     if SKIP_CUDA_BUILD:
-    #         print("[CUDA] Disabled: CUDA was skipped at build time")
-    #         return False
-    # except ImportError:
-    #     if bool(int(os.environ.get("TE_FL_SKIP_CUDA", "0"))):
-    #         print("[CUDA] Disabled: TE_FL_SKIP_CUDA=1")
-    #         return False
-
-    # try:
-    #     if not _ensure_musa_libs():
-    #         return False
-    #     import transformer_engine_musa
-    #     import transformer_engine_musa_torch
-    #     return True
-    # except (ImportError, OSError) as e:
-    #     print(f"[MUSA] Import failed: {e}")
-    #     return False
 
 def _get_tex():
     _ensure_musa_libs()
@@ -294,18 +209,11 @@ class MUSABackend(TEFLBackendBase):
         if bias_type is None:
             bias_type = self._to_te_dtype(torch.bfloat16)
 
-        # return tex.generic_gemm(
-        #     A, transA, B, transB, D, quantizer, output_dtype,
-        #     bias, bias_type, gelu, gelu_in, grad, workspace, workspace_size,
-        #     accumulate, use_split_accumulator, comm_overlap, comm_type,
-        #     extra_output, bulk_overlap, alpha, beta
-        # )
-
         return tex.generic_gemm(
             A, transA, B, transB, D, quantizer, output_dtype,
             bias, bias_type, gelu, gelu_in, grad, workspace, workspace_size,
             accumulate, use_split_accumulator, comm_overlap, comm_type,
-            extra_output, bulk_overlap
+            extra_output, bulk_overlap, alpha, beta
         )
 
 

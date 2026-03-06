@@ -27,7 +27,6 @@ from ..op import BasicOperation, OperationContext
 from .._common import maybe_autocast_dtype, maybe_dequantize
 
 
-
 class RMSNorm(BasicOperation):
     r"""Root Mean Square Layer Normalization
 
@@ -232,7 +231,6 @@ class RMSNorm(BasicOperation):
             w,
             self._sm_margins["backward"],
             self.zero_centered_gamma,
-            self.eps,
         )
 
         # Clear saved tensors if possible

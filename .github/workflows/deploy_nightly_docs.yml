@@ -6,7 +6,7 @@
 name: Deploy nightly docs
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "__disabled_do_not_remove__" ]
 jobs:
   build:
     uses: ./.github/workflows/docs.yml

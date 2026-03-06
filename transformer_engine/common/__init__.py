@@ -31,17 +31,20 @@ def skip_cuda_build() -> bool:
     # Fall back to build-time configuration
     try:
         from transformer_engine.plugin.core._build_config import SKIP_CUDA_BUILD
+
         return SKIP_CUDA_BUILD
     except ImportError:
         # If build config doesn't exist, default to False
         return False
+
 
 # Load plugin system - this handles module registration and backend initialization
 # The _module_setup inside core will:
 # 1. Register modules under both full and short names for relative imports
 # 2. Load all available backends (flagos, reference, vendor/cuda, etc.)
 # 3. Register transformer_engine_torch module from the selected backend
-import transformer_engine.plugin.core  # noqa: F401
+import transformer_engine.plugin.core  # noqa: F401  # pylint: disable=wrong-import-position
+
 
 @functools.lru_cache(maxsize=None)
 def _is_package_installed(package) -> bool:
